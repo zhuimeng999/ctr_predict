@@ -113,6 +113,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-set-preprocess', action="store_true")
     args = parser.parse_args()
 
+    split_train_valid('output/train.gz')
     count_values(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'count_dict.pickle'))
     count_dict_to_feature_dict(os.path.join(doutpath, 'count_dict.pickle'), os.path.join(doutpath, 'feature_dict.pickle'))
     convert_origin_file(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'train_preprocessed.csv'),
