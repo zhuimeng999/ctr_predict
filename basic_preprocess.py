@@ -111,7 +111,7 @@ if __name__ == '__main__':
     parser.add_argument('--count', action="store_true")
     parser.add_argument('--count-no-id', action="store_true")
     parser.add_argument('--data-set-preprocess', action="store_true")
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
     split_train_valid('output/train.gz')
     count_values(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'count_dict.pickle'))
