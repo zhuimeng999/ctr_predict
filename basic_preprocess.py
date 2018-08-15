@@ -3,6 +3,7 @@ import collections
 import argparse
 import pickle
 from datetime import datetime
+import tensorflow as tf
 
 dpath = 'prev-output'
 doutpath = 'output'
@@ -82,32 +83,41 @@ def count_dict_to_feature_dict(count_dict_name, feature_dict_name):
     return feature_dict
 
 
+def build_example(line):
+    # Your code here, fill the dict
+    feature_dict = {
+        'X': tf.train.Feature(int64_list=tf.train.Int64List(value=line[2:])),
+        'Y': tf.train.Feature(int64_list=tf.train.Int64List(value=[line[1]]))
+    }
+    example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
+    return example
+
+
 def convert_origin_file(org_filename, new_file_name, feature_dict_name):
     with open(feature_dict_name, 'rb') as f:
         feature_dict = pickle.load(f)
-    with open(org_filename, 'r') as forg, open(new_file_name, 'w') as fnew:
+    with open(org_filename, 'r') as forg, tf.python_io.TFRecordWriter(new_file_name) as writer:
         tmp = forg.readline().strip().split(',')
         tmp.append('weekday')
         fnew.write(','.join(tmp) + '\n')
         for line in forg:
             line = line.strip().split(',')
             for i in range(len(line)):
-                if i <= 1:
+                if i == 0:
                     pass
+                elif i == 1:
+                    line[i] = int(line[i])
                 elif i == 2:
-                    try:
-                        time = datetime.strptime('20' + line[2], '%Y%m%d%H')
-                    except:
-                        print(line[2])
-                        raise
-                    line[2] = str(time.hour)
-                    line.append(str(time.weekday()))
+                    time = datetime.strptime('20' + line[2], '%Y%m%d%H')
+                    line[2] = time.hour
+                    line.append(time.weekday())
                 else:
                     # print(line[i])
                     # print(tmp[i])
                     # print(feature_dict[tmp[i]])
-                    line[i] = str(feature_dict[tmp[i]].get(line[i], 0))
-            fnew.write(','.join(line) + '\n')
+                    line[i] = feature_dict[tmp[i]].get(line[i], 0)
+            example = build_example(line)
+            writer.write(example.SerializeToString())
 
 
 if __name__ == '__main__':
@@ -116,14 +126,17 @@ if __name__ == '__main__':
     parser.add_argument('--count', action="store_true")
     parser.add_argument('--count-no-id', action="store_true")
     parser.add_argument('--data-set-preprocess', action="store_true")
-    #args = parser.parse_args()
+    # args = parser.parse_args()
 
     print('split train valid...')
-    split_train_valid('output/train.gz')
+    if os.path.exists('output/train.gz'):
+        split_train_valid('output/train.gz')
+    else:
+        split_train_valid('data/train.csv')
     print('count_values...')
     count_values(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'count_dict.pickle'))
     print('count_dict_to_feature_dict...')
     count_dict_to_feature_dict(os.path.join(doutpath, 'count_dict.pickle'), os.path.join(doutpath, 'feature_dict.pickle'))
     print('convert_origin_file')
-    convert_origin_file(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'train_preprocessed.csv'),
+    convert_origin_file(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'train_preprocessed.tfrecord'),
                         os.path.join(doutpath, 'feature_dict.pickle'))
