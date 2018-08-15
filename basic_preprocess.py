@@ -31,7 +31,7 @@ def split_train_valid(data_filename):
             progress += 1
             if progress%400000 == 0:
                 print('Progress ', progress)
-
+    print('Progress ', progress)
     train_split.close()
     valid_split.close()
 
@@ -96,6 +96,8 @@ def build_example(line):
 def convert_origin_file(org_filename, new_file_name, feature_dict_name):
     with open(feature_dict_name, 'rb') as f:
         feature_dict = pickle.load(f)
+
+    progress = 0
     with open(org_filename, 'r') as forg, tf.python_io.TFRecordWriter(new_file_name) as writer:
         tmp = forg.readline().strip().split(',')
         tmp.append('weekday')
@@ -117,6 +119,12 @@ def convert_origin_file(org_filename, new_file_name, feature_dict_name):
                     line[i] = feature_dict[tmp[i]].get(line[i], 0)
             example = build_example(line)
             writer.write(example.SerializeToString())
+
+            progress += 1
+            if progress%400000 == 0:
+                print('Progress ', progress)
+        if progress % 400000 == 0:
+            print('Progress ', progress)
 
 
 if __name__ == '__main__':

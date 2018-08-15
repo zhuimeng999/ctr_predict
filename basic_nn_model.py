@@ -1,90 +1,131 @@
+#  Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+"""An Example of a custom Estimator for the Iris dataset."""
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import argparse
 import tensorflow as tf
-import pickle
-import numpy as np
 
-batch_size = 128
-rnn_layers = 3
+import iris_data
 
-with open('output/train_preprocessed.csv', 'r') as f:
-    columns = f.readline().strip().split(',')
+parser = argparse.ArgumentParser()
+parser.add_argument('--batch_size', default=100, type=int, help='batch size')
+parser.add_argument('--train_steps', default=1000, type=int,
+                    help='number of training steps')
 
-with open('output/feature_dict.pickle', 'rb') as f:
-    feature_dict = pickle.load(f)
+def my_model(features, labels, mode, params):
+    """DNN with three hidden layers, and dropout of 0.1 probability."""
+    # Create three fully connected layers each layer having a dropout
+    # probability of 0.1.
+    net = tf.feature_column.input_layer(features, params['feature_columns'])
+    for units in params['hidden_units']:
+        net = tf.layers.dense(net, units=units, activation=tf.nn.relu)
 
-print('columns:', columns)
+    # Compute logits (1 per class).
+    logits = tf.layers.dense(net, params['n_classes'], activation=None)
 
-x_len = len(columns) - 2
+    # Compute predictions.
+    predicted_classes = tf.argmax(logits, 1)
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        predictions = {
+            'class_ids': predicted_classes[:, tf.newaxis],
+            'probabilities': tf.nn.softmax(logits),
+            'logits': logits,
+        }
+        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-x = tf.placeholder(dtype=tf.int32, shape=(batch_size, x_len))
-y = tf.placeholder(dtype=tf.int32, shape=(batch_size, 1))
+    # Compute loss.
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
-x_embed = []
+    # Compute evaluation metrics.
+    accuracy = tf.metrics.accuracy(labels=labels,
+                                   predictions=predicted_classes,
+                                   name='acc_op')
+    metrics = {'accuracy': accuracy}
+    tf.summary.scalar('accuracy', accuracy[1])
 
-embeddings_list=[]
+    if mode == tf.estimator.ModeKeys.EVAL:
+        return tf.estimator.EstimatorSpec(
+            mode, loss=loss, eval_metric_ops=metrics)
 
-with tf.name_scope('embeddings'):
-    embeddings = tf.Variable(
-        tf.random_uniform([24, 3], -1.0, 1.0))
-    embeddings_list.append(embeddings)
-    embed = tf.nn.embedding_lookup(embeddings, x[:, 0])
-    x_embed.append(embed)
+    # Create training op.
+    assert mode == tf.estimator.ModeKeys.TRAIN
 
-for i in range(2, len(columns) - 1):
-    with tf.name_scope('embeddings'):
-        feature_size = len(feature_dict[columns[i]])
-        embeddings = tf.Variable(
-            tf.random_uniform([feature_size, 3], -1.0, 1.0))
-        embeddings_list.append(embeddings)
-        embed = tf.nn.embedding_lookup(embeddings, x[:, i - 1])
-        x_embed.append(embed)
-
-with tf.name_scope('embeddings'):
-    embeddings = tf.Variable(
-        tf.random_uniform([7, 3], -1.0, 1.0))
-    embeddings_list.append(embeddings)
-    embed = tf.nn.embedding_lookup(embeddings, x[:, x_len - 1])
-    x_embed.append(embed)
-
-x_embed = tf.concat(x_embed, 1)
-x_embed_size = x_embed.shape.as_list()
-w1 = tf.get_variable('w1', initializer=tf.truncated_normal((x_embed_size[1], x_embed_size[1])))
-b1 = tf.get_variable('b1', initializer=tf.truncated_normal((1, x_embed_size[1])))
-logists1 = tf.matmul(x_embed, w1) + b1
-activate1 = tf.nn.tanh(logists1)
-
-w2 = tf.get_variable('w2', initializer=tf.truncated_normal((x_embed_size[1], 1)))
-b2 = tf.get_variable('b2', initializer=tf.truncated_normal((1, 1)))
-logists2 = tf.matmul(activate1, w2) + b2
-y_ = tf.nn.sigmoid(logists2)
-
-loss = tf.losses.log_loss(y, y_)
-tf.summary.scalar('loss', loss)
-
-train_op = tf.train.AdamOptimizer(0.001)
-train_op = train_op.minimize(loss=loss, global_step=tf.train.get_global_step())
+    optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
+    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
-sess = tf.Session()
-init_op = tf.global_variables_initializer()
-sess.run(init_op)
+def main(argv):
+    args = parser.parse_args(argv[1:])
 
-with open('output/train_preprocessed.csv', 'r') as f:
-    f.readline()
-    k = 0
-    x_batch = []
-    y_batch = []
-    for line in f:
-        k += 1
-        tmp = list(map(lambda x: int(x), line.strip().split(',')))
-        x_batch.append(tmp[2:])
-        y_batch.append([tmp[1]])
-        if k == batch_size:
-            feed_dict = {
-                x: np.asarray(x_batch),
-                y: np.asarray(y_batch)
-            }
-            curr_loss, _ = sess.run([loss, train_op], feed_dict=feed_dict)
+    # Fetch the data
+    (train_x, train_y), (test_x, test_y) = iris_data.load_data()
 
-            k = 0
-            x_batch = []
-            y_batch = []
+    # Feature columns describe how to use the input.
+    my_feature_columns = []
+    for key in train_x.keys():
+        my_feature_columns.append(tf.feature_column.numeric_column(key=key))
+
+    # Build 2 hidden layer DNN with 10, 10 units respectively.
+    classifier = tf.estimator.Estimator(
+        model_fn=my_model,
+        params={
+            'feature_columns': my_feature_columns,
+            # Two hidden layers of 10 nodes each.
+            'hidden_units': [10, 10],
+            # The model must choose between 3 classes.
+            'n_classes': 3,
+        })
+
+    # Train the Model.
+    classifier.train(
+        input_fn=lambda:iris_data.train_input_fn(train_x, train_y, args.batch_size),
+        steps=args.train_steps)
+
+    # Evaluate the model.
+    eval_result = classifier.evaluate(
+        input_fn=lambda:iris_data.eval_input_fn(test_x, test_y, args.batch_size))
+
+    print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
+
+    # Generate predictions from the model
+    expected = ['Setosa', 'Versicolor', 'Virginica']
+    predict_x = {
+        'SepalLength': [5.1, 5.9, 6.9],
+        'SepalWidth': [3.3, 3.0, 3.1],
+        'PetalLength': [1.7, 4.2, 5.4],
+        'PetalWidth': [0.5, 1.5, 2.1],
+    }
+
+    predictions = classifier.predict(
+        input_fn=lambda:iris_data.eval_input_fn(predict_x,
+                                                labels=None,
+                                                batch_size=args.batch_size))
+
+    for pred_dict, expec in zip(predictions, expected):
+        template = ('\nPrediction is "{}" ({:.1f}%), expected "{}"')
+
+        class_id = pred_dict['class_ids'][0]
+        probability = pred_dict['probabilities'][class_id]
+
+        print(template.format(iris_data.SPECIES[class_id],
+                              100 * probability, expec))
+
+
+if __name__ == '__main__':
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.app.run(main)
