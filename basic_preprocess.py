@@ -29,8 +29,8 @@ def split_train_valid(data_filename):
                 train_split.write(line)
 
             progress += 1
-            if progress%10000 == 0:
-                print('\rProgress ', progress, end='')
+            if progress%400000 == 0:
+                print('Progress ', progress)
 
     train_split.close()
     valid_split.close()
@@ -99,7 +99,6 @@ def convert_origin_file(org_filename, new_file_name, feature_dict_name):
     with open(org_filename, 'r') as forg, tf.python_io.TFRecordWriter(new_file_name) as writer:
         tmp = forg.readline().strip().split(',')
         tmp.append('weekday')
-        fnew.write(','.join(tmp) + '\n')
         for line in forg:
             line = line.strip().split(',')
             for i in range(len(line)):
