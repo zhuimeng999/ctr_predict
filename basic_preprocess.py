@@ -12,6 +12,7 @@ def split_train_valid(data_filename):
     train_split = open(os.path.join(doutpath, 'train_split.csv'), 'wb')
     valid_split = open(os.path.join(doutpath, 'valid_split.csv'), 'wb')
 
+    progress = 0
     with open(data_filename, 'rb') as ftrain:
         header = ftrain.readline()
         train_split.write(header)
@@ -25,6 +26,10 @@ def split_train_valid(data_filename):
                 valid_split.write(line)
             else:
                 train_split.write(line)
+
+            progress += 1
+            if progress%10000 == 0:
+                print('\rProgress ', progress, end='')
 
     train_split.close()
     valid_split.close()
@@ -113,8 +118,12 @@ if __name__ == '__main__':
     parser.add_argument('--data-set-preprocess', action="store_true")
     #args = parser.parse_args()
 
+    print('split train valid...')
     split_train_valid('output/train.gz')
+    print('count_values...')
     count_values(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'count_dict.pickle'))
+    print('count_dict_to_feature_dict...')
     count_dict_to_feature_dict(os.path.join(doutpath, 'count_dict.pickle'), os.path.join(doutpath, 'feature_dict.pickle'))
+    print('convert_origin_file')
     convert_origin_file(os.path.join(doutpath, 'train_split.csv'), os.path.join(doutpath, 'train_preprocessed.csv'),
                         os.path.join(doutpath, 'feature_dict.pickle'))
