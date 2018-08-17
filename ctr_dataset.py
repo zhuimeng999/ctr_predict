@@ -50,6 +50,7 @@ tf.app.flags.DEFINE_string("feature_map_filename", 'feature_map.pickle', "split 
 tf.app.flags.DEFINE_string("train_format_filename", 'train_format.tfrecord', "split valid file name")
 tf.app.flags.DEFINE_boolean("gen_csv", True, "If True, will split 30s day as valid data set")
 tf.app.flags.DEFINE_string("csv_filename", 'train_format.csv', "split valid file name")
+tf.app.flags.DEFINE_boolean('cal_md5sum', False, 'md5sum')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -261,6 +262,11 @@ def main(_):
         train_path = train_split_path
     map_list = get_feature_map(train_path, feature_count_path, feature_map_path)
     convert_origin_file(train_path, train_format_path, map_list, csv_path, FLAGS.gen_csv)
+
+    if FLAGS.cal_md5sum:
+        os.system('md5sum ' + train_format_path)
+        if FLAGS.gen_csv:
+            os.system('md5sum ' + csv_path)
 
 
 if __name__ == "__main__":
