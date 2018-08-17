@@ -1,30 +1,46 @@
-#  Copyright 2016 The TensorFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-"""An Example of a custom Estimator for the Iris dataset."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 import tensorflow as tf
-
-import iris_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 parser.add_argument('--train_steps', default=1000, type=int,
                     help='number of training steps')
+
+
+def dataset_input_fn(batch_size):
+    filenames = ['output/train_preprocessed.tfrecord']
+    dataset = tf.data.TFRecordDataset(filenames)
+
+    # Use `tf.parse_single_example()` to extract data from a `tf.Example`
+    # protocol buffer, and perform any additional per-record preprocessing.
+    def dataset_parser(record):
+        keys_to_features = {
+            "image_data": tf.FixedLenFeature((), tf.string, default_value=""),
+            "date_time": tf.FixedLenFeature((), tf.int64, default_value=""),
+            "label": tf.FixedLenFeature((), tf.int64,
+                                        default_value=tf.zeros([], dtype=tf.int64)),
+        }
+        parsed = tf.parse_single_example(record, keys_to_features)
+
+        # Perform additional preprocessing on the parsed data.
+        image = tf.image.decode_jpeg(parsed["image_data"])
+        image = tf.reshape(image, [299, 299, 1])
+        label = tf.cast(parsed["label"], tf.int32)
+
+        return {"image_data": image, "date_time": parsed["date_time"]}, label
+
+    # Use `Dataset.map()` to build a pair of a feature dictionary and a label
+    # tensor for each example.
+    dataset = dataset.map(dataset_parser)
+    dataset = dataset.shuffle(buffer_size=10000)
+    dataset = dataset.batch(batch_size)
+    # dataset = dataset.repeat(num_epochs)
+    iterator = dataset.make_one_shot_iterator()
+
+    # `features` is a dictionary in which each value is a batch of values for
+    # that feature; `labels` is a batch of labels.
+    features, labels = iterator.get_next()
+    return features, labels
 
 def my_model(features, labels, mode, params):
     """DNN with three hidden layers, and dropout of 0.1 probability."""
