@@ -49,6 +49,8 @@ _COLUMN_EMBEDDING_DIM = \
                  9,             10,                4,              66,             100,                    55,
                  7]
 
+_CSV_COLUMN_DEFAULTS = [[0]]*len(_COLUMN_DIM)
+_CSV_COLUMN_DEFAULTS[0] = ['']
 
 tf.app.flags.DEFINE_string("train_filename", 'data/train.csv', "Training data. E.g., train.csv.")
 tf.app.flags.DEFINE_boolean("train_valid_split", True, "If True, will split 30s day as valid data set")
@@ -58,9 +60,14 @@ tf.app.flags.DEFINE_string("output_dir", 'output', "processed data output direct
 tf.app.flags.DEFINE_string("feature_count_filename", 'feature_count.pickle', "split valid file name")
 tf.app.flags.DEFINE_string("feature_map_filename", 'feature_map.pickle', "split valid file name")
 tf.app.flags.DEFINE_string("train_format_filename", 'train_format.tfrecord', "split valid file name")
+tf.app.flags.DEFINE_string("valid_format_filename", 'valid_format.tfrecord', "split valid file name")
 tf.app.flags.DEFINE_boolean("gen_csv", True, "If True, will split 30s day as valid data set")
-tf.app.flags.DEFINE_string("csv_filename", 'train_format.csv', "split valid file name")
+tf.app.flags.DEFINE_string("train_csv_filename", 'train_format.csv', "split valid file name")
+tf.app.flags.DEFINE_string("valid_csv_filename", 'valid_format.csv', "split valid file name")
 tf.app.flags.DEFINE_boolean('cal_md5sum', False, 'md5sum')
+tf.app.flags.DEFINE_boolean('gen_valid_dataset', False, 'md5sum')
+tf.app.flags.DEFINE_boolean('build_feature_map', True, 'md5sum')
+tf.app.flags.DEFINE_enum('gen_type', 'all', ['train', 'valid', 'all'], 'gen type')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -122,13 +129,14 @@ def get_feature_map(train_path, feature_count_path, feature_map_path):
 def build_example(line, with_id=False):
     feature_dict = {feature_name: tf.train.Feature(int64_list=tf.train.Int64List(value=[feature]))
                     for feature_name, feature in zip(_COLUMN_NAMES[1:], line[1:])}
+
     if with_id:
         feature_dict['id'] = tf.train.Feature(bytes_list=tf.train.BytesList(value=[line[0].encode()]))
     example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
     return example
 
 
-def convert_origin_file(train_path, format_path, map_list, csv_path='train_format.csv', gen_csv=True):
+def gen_train_dataset(train_path, format_path, map_list, csv_path='train_format.csv', gen_csv=True):
     log_prefix = 'convert_origin_file'
     tf.logging.info('{} ...'.format(log_prefix))
 
@@ -161,6 +169,44 @@ def convert_origin_file(train_path, format_path, map_list, csv_path='train_forma
         tf.logging.info('{}: Progress {}, done!!!'.format(log_prefix, line_no))
 
 
+def gen_valid_dataset(train_path, format_path, map_list, csv_path='valid_format.csv', gen_csv=True):
+    log_prefix = 'gen_valid_dataset'
+    tf.logging.info('{} ...'.format(log_prefix))
+
+    if gen_csv:
+        fcsv = open(csv_path, 'w')
+    with open(train_path, 'r') as ftrain, tf.python_io.TFRecordWriter(format_path) as writer:
+        tmp = ftrain.readline().strip().split(',')
+        tmp.append('weekday')
+        if gen_csv:
+            fcsv.write(','.join(tmp) + '\n')
+
+        skip_line = 0
+        for line_no, line in enumerate(ftrain):
+            try:
+                for index, feature in enumerate(line.strip().split(',')):
+                    if index > 2:
+                        tmp[index] = map_list[index][feature]
+                    elif index == 2:
+                        parsed_time = datetime.strptime('20' + feature, '%Y%m%d%H')
+                        tmp[index] = parsed_time.hour
+                    elif index == 1:
+                        tmp[index] = int(feature)
+                    elif index == 0:
+                        tmp[index] = feature
+                # add week info
+                tmp[-1] = parsed_time.weekday()
+                example = build_example(tmp)
+                writer.write(example.SerializeToString())
+                if gen_csv:
+                    fcsv.write(','.join(map(lambda x: str(x), tmp)) + '\n')
+            except KeyError as e:
+                skip_line += 1
+
+            tf.logging.log_every_n(tf.logging.INFO, '{}: Progress {}'.format(log_prefix, line_no), 400000)
+        tf.logging.info('{}: Progress {}, skip {}, done!!!'.format(log_prefix, line_no, skip_line))
+
+
 def build_model_columns():
     ctr_columns = [tf.feature_column.embedding_column(
         tf.feature_column.categorical_column_with_identity(feature_name, _COLUMN_DIM[index]),
@@ -177,8 +223,32 @@ def _deserialize(examples_serialized):
     return features, label
 
 
-def get_input_fn(train_path, batch_size, repeat, shuffle):
-    def input_fn():
+def parse_csv(value):
+    columns = tf.decode_csv(value, record_defaults=_CSV_COLUMN_DEFAULTS, use_quote_delim=False)
+    features = dict(zip(_COLUMN_NAMES, columns))
+    features.pop('id')
+    labels = features.pop('click')
+    return features, [labels]
+
+
+def get_input_fn(train_path, batch_size, repeat, shuffle, use_tfrecord=False):
+    def csv_input_fn():
+        # Extract lines from input files using the Dataset API.
+        dataset = tf.data.TextLineDataset(train_path)
+        dataset = dataset.skip(1)
+        dataset = dataset.map(parse_csv, num_parallel_calls=5)
+        if shuffle:
+            dataset = dataset.shuffle(buffer_size=shuffle)
+
+
+
+        # We call repeat after shuffling, rather than before, to prevent separate
+        # epochs from blending together.
+        dataset = dataset.repeat(repeat)
+        dataset = dataset.batch(batch_size)
+        return dataset
+
+    def tfrecord_input_fn():
         dataset = tf.data.TFRecordDataset(train_path)
         # batch comes before map because map can deserialize multiple examples.
         dataset = dataset.batch(batch_size)
@@ -189,7 +259,10 @@ def get_input_fn(train_path, batch_size, repeat, shuffle):
         dataset = dataset.repeat(repeat)
         return dataset.prefetch(1)
 
-    return input_fn
+    if use_tfrecord:
+        return tfrecord_input_fn
+    else:
+        return csv_input_fn
 
 
 def main(_):
@@ -199,17 +272,26 @@ def main(_):
     feature_count_path = os.path.join(FLAGS.output_dir, FLAGS.feature_count_filename)
     feature_map_path = os.path.join(FLAGS.output_dir, FLAGS.feature_map_filename)
     train_format_path = os.path.join(FLAGS.output_dir, FLAGS.train_format_filename)
-    csv_path = os.path.join(FLAGS.output_dir, FLAGS.csv_filename)
+    valid_format_path = os.path.join(FLAGS.output_dir, FLAGS.valid_format_filename)
+    train_csv_path = os.path.join(FLAGS.output_dir, FLAGS.train_csv_filename)
+    valid_csv_path = os.path.join(FLAGS.output_dir, FLAGS.valid_csv_filename)
     if FLAGS.train_valid_split:
         train_valid_split(train_path, train_split_path, valid_split_path)
         train_path = train_split_path
-    map_list = get_feature_map(train_path, feature_count_path, feature_map_path)
-    convert_origin_file(train_path, train_format_path, map_list, csv_path, FLAGS.gen_csv)
 
-    if FLAGS.cal_md5sum:
-        os.system('md5sum ' + train_format_path)
-        if FLAGS.gen_csv:
-            os.system('md5sum ' + csv_path)
+    if FLAGS.build_feature_map:
+        map_list = get_feature_map(train_path, feature_count_path, feature_map_path)
+    else:
+        with open(feature_map_path, 'rb') as fmap:
+            map_list = pickle.load(fmap)
+    if FLAGS.gen_type == 'all' or FLAGS.gen_type == 'train':
+        gen_train_dataset(train_path, train_format_path, map_list, train_csv_path, FLAGS.gen_csv)
+        if FLAGS.cal_md5sum:
+            os.system('md5sum ' + train_format_path)
+            if FLAGS.gen_csv:
+                os.system('md5sum ' + train_csv_path)
+    if FLAGS.gen_type == 'all' or FLAGS.gen_type == 'valid':
+        gen_valid_dataset(valid_split_path, valid_format_path, map_list, valid_csv_path, FLAGS.gen_csv)
 
 
 if __name__ == "__main__":

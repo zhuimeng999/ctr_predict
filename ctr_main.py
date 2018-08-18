@@ -17,7 +17,12 @@
 import os
 
 import tensorflow as tf
-from ctr_dataset import build_model_columns, get_input_fn
+from ctr_dataset import build_model_columns, get_input_fn, FLAGS
+
+tf.app.flags.DEFINE_integer(
+    "epochs_to_train", 15,
+    "Number of epochs to train. Each epoch processes the training data once "
+    "completely.")
 
 
 def my_model(features, labels, mode, params):
@@ -27,11 +32,11 @@ def my_model(features, labels, mode, params):
     net = tf.feature_column.input_layer(features, params['feature_columns'])
     input_dim = net.shape.as_list()
     tf.logging.info('input dim {}'.format(input_dim))
-    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.relu)
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.tanh)
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.tanh)
 
     # Compute logits (1 per class).
     logits = tf.layers.dense(net, units=1, activation=None)
-
     # Compute predictions.
     predicted_classes = tf.cast(tf.greater(logits, 0), tf.int64)
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -41,7 +46,6 @@ def my_model(features, labels, mode, params):
             'logits': logits,
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
-
     # Compute loss.
     loss = tf.losses.log_loss(labels=labels, predictions=tf.nn.sigmoid(logits))
 
@@ -70,17 +74,20 @@ def main(_):
         model_fn=my_model,
         params={
             'feature_columns': build_model_columns()
-        })
+        },
+        model_dir=FLAGS.output_dir)
 
-    # Train the Model.
-    classifier.train(
-        input_fn=get_input_fn(os.path.join('output', 'train_format.tfrecord'), 256, 1, 1000))
+    for i in range(FLAGS.epochs_to_train):
+        print('perform {}s epoch...'.format(i))
+        # Train the Model.
+        classifier.train(
+            input_fn=get_input_fn(os.path.join('output', 'train_format.csv'), 256, 1, 1000))
 
-    # Evaluate the model.
-    eval_result = classifier.evaluate(
-        input_fn=get_input_fn(os.path.join('output', 'train_format.tfrecord'), 256, 1, 1000))
+        # Evaluate the model.
+        eval_result = classifier.evaluate(
+            input_fn=get_input_fn(os.path.join('output', 'valid_format.tfrecord'), 256, 1, 1000, use_tfrecord=True))
 
-    print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
+        print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
 
     # Generate predictions from the model
     # expected = ['Setosa', 'Versicolor', 'Virginica']
