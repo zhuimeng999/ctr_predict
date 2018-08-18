@@ -53,7 +53,7 @@ _CSV_COLUMN_DEFAULTS = [[0]]*len(_COLUMN_DIM)
 _CSV_COLUMN_DEFAULTS[0] = ['']
 
 tf.app.flags.DEFINE_string("train_filename", 'data/train.csv', "Training data. E.g., train.csv.")
-tf.app.flags.DEFINE_boolean("train_valid_split", False, "If True, will split 30s day as valid data set")
+tf.app.flags.DEFINE_boolean("train_valid_split", True, "If True, will split 30s day as valid data set")
 tf.app.flags.DEFINE_string("train_split_filename", 'train_split.csv', "split train file name")
 tf.app.flags.DEFINE_string("valid_split_filename", 'valid_split.csv', "split valid file name")
 tf.app.flags.DEFINE_string("output_dir", 'output', "processed data output directory")
@@ -64,10 +64,9 @@ tf.app.flags.DEFINE_string("valid_format_filename", 'valid_format.tfrecord', "sp
 tf.app.flags.DEFINE_boolean("gen_csv", True, "If True, will split 30s day as valid data set")
 tf.app.flags.DEFINE_string("train_csv_filename", 'train_format.csv', "split valid file name")
 tf.app.flags.DEFINE_string("valid_csv_filename", 'valid_format.csv', "split valid file name")
-tf.app.flags.DEFINE_boolean('cal_md5sum', False, 'md5sum')
-tf.app.flags.DEFINE_boolean('gen_valid_dataset', False, 'md5sum')
-tf.app.flags.DEFINE_boolean('build_feature_map', False, 'md5sum')
-tf.app.flags.DEFINE_enum('gen_type', 'valid', ['train', 'valid', 'all'], 'gen type')
+tf.app.flags.DEFINE_boolean('cal_md5sum', True, 'md5sum')
+tf.app.flags.DEFINE_boolean('build_feature_map', True, 'md5sum')
+tf.app.flags.DEFINE_enum('gen_type', 'all', ['train', 'valid', 'all'], 'gen type')
 
 FLAGS = tf.app.flags.FLAGS
 
