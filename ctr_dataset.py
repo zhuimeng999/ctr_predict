@@ -275,8 +275,6 @@ def main(_):
     valid_format_path = os.path.join(FLAGS.output_dir, FLAGS.valid_format_filename)
     train_csv_path = os.path.join(FLAGS.output_dir, FLAGS.train_csv_filename)
     valid_csv_path = os.path.join(FLAGS.output_dir, FLAGS.valid_csv_filename)
-    print(FLAGS)
-    return
     if FLAGS.train_valid_split:
         train_valid_split(train_path, train_split_path, valid_split_path)
         train_path = train_split_path
