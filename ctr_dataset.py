@@ -224,7 +224,7 @@ def _deserialize(examples_serialized):
 
 
 def parse_csv(value):
-    columns = tf.decode_csv(value, record_defaults=_CSV_COLUMN_DEFAULTS, use_quote_delim=False)
+    columns = tf.decode_csv(value, record_defaults=_CSV_COLUMN_DEFAULTS)
     features = dict(zip(_COLUMN_NAMES, columns))
     features.pop('id')
     labels = features.pop('click')
@@ -236,7 +236,7 @@ def get_input_fn(train_path, batch_size, repeat, shuffle, use_tfrecord=False):
         # Extract lines from input files using the Dataset API.
         dataset = tf.data.TextLineDataset(train_path)
         dataset = dataset.skip(1)
-        dataset = dataset.map(parse_csv, num_parallel_calls=5)
+        dataset = dataset.map(parse_csv)
         if shuffle:
             dataset = dataset.shuffle(buffer_size=shuffle)
 
@@ -252,7 +252,7 @@ def get_input_fn(train_path, batch_size, repeat, shuffle, use_tfrecord=False):
         dataset = tf.data.TFRecordDataset(train_path)
         # batch comes before map because map can deserialize multiple examples.
         dataset = dataset.batch(batch_size)
-        dataset = dataset.map(_deserialize, num_parallel_calls=8)
+        dataset = dataset.map(_deserialize)
         if shuffle:
             dataset = dataset.shuffle(shuffle)
 
