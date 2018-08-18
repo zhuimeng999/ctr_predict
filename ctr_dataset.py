@@ -29,15 +29,25 @@ _RAW_COLUMN_NAMES = \
                  'C16',         'C17',              'C18',          'C19',          'C20',                  'C21']
 _COLUMN_NAMES = _RAW_COLUMN_NAMES.copy()
 _COLUMN_NAMES.append('weekday')
-_LABEL_NAME = _COLUMN_NAMES.pop(0)
 
 _BUFFER_SUBDIR = "wide_deep_buffer"
 _FEATURE_MAP = {
-    column_name: tf.FixedLenFeature([1], dtype=tf.int64) for column_name in _COLUMN_NAMES
+    column_name: tf.FixedLenFeature([1], dtype=tf.int64) for column_name in _COLUMN_NAMES[1:]
 }
 
-_USER_EMBEDDING_DIM = 16
-_ITEM_EMBEDDING_DIM = 64
+_COLUMN_DIM = \
+                [0,             2,                  24,             7,              7,                      4642,
+                 7564,          26,                 8291,           548,            36,                     2484613,
+                 6134351,       8162,               5,              4,              2470,                   8,
+                 9,             407,                4,              66,             172,                    55,
+                 7]
+
+_COLUMN_EMBEDDING_DIM = \
+                [0,             2,                  24,             7,              7,                      10,
+                 10,           26,                 10,           10,             36,                     10,
+                 10,           10,                5,              4,              10,                    8,
+                 9,             10,                4,              66,             100,                    55,
+                 7]
 
 
 tf.app.flags.DEFINE_string("train_filename", 'data/train.csv', "Training data. E.g., train.csv.")
@@ -109,10 +119,11 @@ def get_feature_map(train_path, feature_count_path, feature_map_path):
     return map_list
 
 
-def build_example(line):
+def build_example(line, with_id=False):
     feature_dict = {feature_name: tf.train.Feature(int64_list=tf.train.Int64List(value=[feature]))
                     for feature_name, feature in zip(_COLUMN_NAMES[1:], line[1:])}
-    feature_dict['id'] = tf.train.Feature(bytes_list=tf.train.BytesList(value=[line[0].encode()]))
+    if with_id:
+        feature_dict['id'] = tf.train.Feature(bytes_list=tf.train.BytesList(value=[line[0].encode()]))
     example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
     return example
 
@@ -149,104 +160,36 @@ def convert_origin_file(train_path, format_path, map_list, csv_path='train_forma
             tf.logging.log_every_n(tf.logging.INFO, '{}: Progress {}'.format(log_prefix, line_no), 400000)
         tf.logging.info('{}: Progress {}, done!!!'.format(log_prefix, line_no))
 
-# def build_model_columns(dataset):
-#   """Builds a set of wide and deep feature columns."""
-#   user_id = tf.feature_column.categorical_column_with_vocabulary_list(
-#       movielens.USER_COLUMN, range(1, movielens.NUM_USER_IDS[dataset]))
-#   user_embedding = tf.feature_column.embedding_column(
-#       user_id, _USER_EMBEDDING_DIM, max_norm=np.sqrt(_USER_EMBEDDING_DIM))
-#
-#   item_id = tf.feature_column.categorical_column_with_vocabulary_list(
-#       movielens.ITEM_COLUMN, range(1, movielens.NUM_ITEM_IDS))
-#   item_embedding = tf.feature_column.embedding_column(
-#       item_id, _ITEM_EMBEDDING_DIM, max_norm=np.sqrt(_ITEM_EMBEDDING_DIM))
-#
-#   time = tf.feature_column.numeric_column(movielens.TIMESTAMP_COLUMN)
-#   genres = tf.feature_column.numeric_column(
-#       movielens.GENRE_COLUMN, shape=(movielens.N_GENRE,), dtype=tf.uint8)
-#
-#   deep_columns = [user_embedding, item_embedding, time, genres]
-#   wide_columns = []
-#
-#   return wide_columns, deep_columns
-#
-#
-# def _deserialize(examples_serialized):
-#   features = tf.parse_example(examples_serialized, _FEATURE_MAP)
-#   return features, features[movielens.RATING_COLUMN] / movielens.MAX_RATING
-#
-#
-# def _buffer_path(data_dir, dataset, name):
-#   return os.path.join(data_dir, _BUFFER_SUBDIR,
-#                       "{}_{}_buffer".format(dataset, name))
-#
-#
-# def _df_to_input_fn(df, name, dataset, data_dir, batch_size, repeat, shuffle):
-#   """Serialize a dataframe and write it to a buffer file."""
-#   buffer_path = _buffer_path(data_dir, dataset, name)
-#   expected_size = _BUFFER_SIZE[dataset].get(name)
-#
-#   file_io.write_to_buffer(
-#       dataframe=df, buffer_path=buffer_path,
-#       columns=list(_FEATURE_MAP.keys()), expected_size=expected_size)
-#
-#   def input_fn():
-#     dataset = tf.data.TFRecordDataset(buffer_path)
-#     # batch comes before map because map can deserialize multiple examples.
-#     dataset = dataset.batch(batch_size)
-#     dataset = dataset.map(_deserialize, num_parallel_calls=16)
-#     if shuffle:
-#       dataset = dataset.shuffle(shuffle)
-#
-#     dataset = dataset.repeat(repeat)
-#     return dataset.prefetch(1)
-#
-#   return input_fn
-#
-#
-# def _check_buffers(data_dir, dataset):
-#   train_path = os.path.join(data_dir, _BUFFER_SUBDIR,
-#                             "{}_{}_buffer".format(dataset, "train"))
-#   eval_path = os.path.join(data_dir, _BUFFER_SUBDIR,
-#                            "{}_{}_buffer".format(dataset, "eval"))
-#
-#   if not tf.gfile.Exists(train_path) or not tf.gfile.Exists(eval_path):
-#     return False
-#
-#   return all([
-#       tf.gfile.Stat(_buffer_path(data_dir, dataset, "train")).length ==
-#       _BUFFER_SIZE[dataset]["train"],
-#       tf.gfile.Stat(_buffer_path(data_dir, dataset, "eval")).length ==
-#       _BUFFER_SIZE[dataset]["eval"],
-#   ])
-#
-#
-# def construct_input_fns(dataset, data_dir, batch_size=16, repeat=1):
-#   """Construct train and test input functions, as well as the column fn."""
-#   if _check_buffers(data_dir, dataset):
-#     train_df, eval_df = None, None
-#   else:
-#     df = movielens.csv_to_joint_dataframe(dataset=dataset, data_dir=data_dir)
-#     df = movielens.integerize_genres(dataframe=df)
-#     df = df.drop(columns=[movielens.TITLE_COLUMN])
-#
-#     train_df = df.sample(frac=0.8, random_state=0)
-#     eval_df = df.drop(train_df.index)
-#
-#     train_df = train_df.reset_index(drop=True)
-#     eval_df = eval_df.reset_index(drop=True)
-#
-#   train_input_fn = _df_to_input_fn(
-#       df=train_df, name="train", dataset=dataset, data_dir=data_dir,
-#       batch_size=batch_size, repeat=repeat,
-#       shuffle=movielens.NUM_RATINGS[dataset])
-#   eval_input_fn = _df_to_input_fn(
-#       df=eval_df, name="eval", dataset=dataset, data_dir=data_dir,
-#       batch_size=batch_size, repeat=repeat, shuffle=None)
-#   model_column_fn = functools.partial(build_model_columns, dataset=dataset)
-#
-#   train_input_fn()
-#   return train_input_fn, eval_input_fn, model_column_fn
+
+def build_model_columns():
+    ctr_columns = [tf.feature_column.embedding_column(
+        tf.feature_column.categorical_column_with_identity(feature_name, _COLUMN_DIM[index]),
+        _COLUMN_EMBEDDING_DIM[index], max_norm=np.sqrt(_COLUMN_EMBEDDING_DIM[index]))
+        for index, feature_name in enumerate(_COLUMN_NAMES) if index > 1]
+
+    return ctr_columns
+
+
+def _deserialize(examples_serialized):
+    features = tf.parse_example(examples_serialized, _FEATURE_MAP)
+    #print(features)
+    label = features.pop('click')
+    return features, label
+
+
+def get_input_fn(train_path, batch_size, repeat, shuffle):
+    def input_fn():
+        dataset = tf.data.TFRecordDataset(train_path)
+        # batch comes before map because map can deserialize multiple examples.
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(_deserialize, num_parallel_calls=8)
+        if shuffle:
+            dataset = dataset.shuffle(shuffle)
+
+        dataset = dataset.repeat(repeat)
+        return dataset.prefetch(1)
+
+    return input_fn
 
 
 def main(_):

@@ -14,96 +14,96 @@
 # ==============================================================================
 """Train DNN on Kaggle movie dataset."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 
-from absl import app as absl_app
-from absl import flags
 import tensorflow as tf
-
-from official.datasets import movielens
-from official.utils.flags import core as flags_core
-from official.utils.logs import logger
-from official.wide_deep import movielens_dataset
-from official.wide_deep import wide_deep_run_loop
+from ctr_dataset import build_model_columns, get_input_fn
 
 
-def define_movie_flags():
-  """Define flags for movie dataset training."""
-  wide_deep_run_loop.define_wide_deep_flags()
-  flags.DEFINE_enum(
-      name="dataset", default=movielens.ML_1M,
-      enum_values=movielens.DATASETS, case_sensitive=False,
-      help=flags_core.help_wrap("Dataset to be trained and evaluated."))
-  flags.adopt_module_key_flags(wide_deep_run_loop)
-  flags_core.set_defaults(data_dir="/tmp/movielens-data/",
-                          model_dir='/tmp/movie_model',
-                          model_type="deep",
-                          train_epochs=50,
-                          epochs_between_evals=5,
-                          batch_size=256)
+def my_model(features, labels, mode, params):
+    """DNN with three hidden layers, and dropout of 0.1 probability."""
+    # Create three fully connected layers each layer having a dropout
+    # probability of 0.1.
+    net = tf.feature_column.input_layer(features, params['feature_columns'])
+    input_dim = net.shape.as_list()
+    tf.logging.info('input dim {}'.format(input_dim))
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.relu)
 
-  @flags.validator("stop_threshold",
-                   message="stop_threshold not supported for movielens model")
-  def _no_stop(stop_threshold):
-    return stop_threshold is None
+    # Compute logits (1 per class).
+    logits = tf.layers.dense(net, units=1, activation=None)
 
+    # Compute predictions.
+    predicted_classes = tf.cast(tf.greater(logits, 0), tf.int64)
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        predictions = {
+            'class_ids': predicted_classes[:, tf.newaxis],
+            'probabilities': tf.nn.sigmoid(logits),
+            'logits': logits,
+        }
+        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-def build_estimator(model_dir, model_type, model_column_fn):
-  """Build an estimator appropriate for the given model type."""
-  if model_type != "deep":
-    raise NotImplementedError("movie dataset only supports `deep` model_type")
-  _, deep_columns = model_column_fn()
-  hidden_units = [256, 256, 256, 128]
+    # Compute loss.
+    loss = tf.losses.log_loss(labels=labels, predictions=tf.nn.sigmoid(logits))
 
-  return tf.estimator.DNNRegressor(
-      model_dir=model_dir,
-      feature_columns=deep_columns,
-      hidden_units=hidden_units,
-      optimizer=tf.train.AdamOptimizer(),
-      activation_fn=tf.nn.sigmoid,
-      dropout=0.3,
-      loss_reduction=tf.losses.Reduction.MEAN)
+    # Compute evaluation metrics.
+    accuracy = tf.metrics.accuracy(labels=labels,
+                                   predictions=predicted_classes,
+                                   name='acc_op')
+    metrics = {'accuracy': accuracy}
+    tf.summary.scalar('accuracy', accuracy[1])
 
+    if mode == tf.estimator.ModeKeys.EVAL:
+        return tf.estimator.EstimatorSpec(
+            mode, loss=loss, eval_metric_ops=metrics)
 
-def run_movie(flags_obj):
-  """Construct all necessary functions and call run_loop.
+    # Create training op.
+    assert mode == tf.estimator.ModeKeys.TRAIN
 
-  Args:
-    flags_obj: Object containing user specified flags.
-  """
-
-  if flags_obj.download_if_missing:
-    movielens.download(dataset=flags_obj.dataset, data_dir=flags_obj.data_dir)
-
-  train_input_fn, eval_input_fn, model_column_fn = \
-    movielens_dataset.construct_input_fns(
-        dataset=flags_obj.dataset, data_dir=flags_obj.data_dir,
-        batch_size=flags_obj.batch_size, repeat=flags_obj.epochs_between_evals)
-
-  tensors_to_log = {
-      'loss': '{loss_prefix}head/weighted_loss/value'
-  }
-
-  wide_deep_run_loop.run_loop(
-      name="MovieLens", train_input_fn=train_input_fn,
-      eval_input_fn=eval_input_fn,
-      model_column_fn=model_column_fn,
-      build_estimator_fn=build_estimator,
-      flags_obj=flags_obj,
-      tensors_to_log=tensors_to_log,
-      early_stop=False)
+    optimizer = tf.train.AdagradOptimizer(learning_rate=0.001)
+    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
 def main(_):
-  with logger.benchmark_context(flags.FLAGS):
-    run_movie(flags.FLAGS)
+    # Build 2 hidden layer DNN with 10, 10 units respectively.
+    classifier = tf.estimator.Estimator(
+        model_fn=my_model,
+        params={
+            'feature_columns': build_model_columns()
+        })
+
+    # Train the Model.
+    classifier.train(
+        input_fn=get_input_fn(os.path.join('output', 'train_format.tfrecord'), 256, 1, 1000))
+
+    # Evaluate the model.
+    eval_result = classifier.evaluate(
+        input_fn=get_input_fn(os.path.join('output', 'train_format.tfrecord'), 256, 1, 1000))
+
+    print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
+
+    # Generate predictions from the model
+    # expected = ['Setosa', 'Versicolor', 'Virginica']
+    # predict_x = {
+    #     'SepalLength': [5.1, 5.9, 6.9],
+    #     'SepalWidth': [3.3, 3.0, 3.1],
+    #     'PetalLength': [1.7, 4.2, 5.4],
+    #     'PetalWidth': [0.5, 1.5, 2.1],
+    # }
+    #
+    # predictions = classifier.predict(
+    #     input_fn=get_input_fn(os.path.join('output', 'train_format.tfrecord'), 256, 1, 1000))
+    #
+    # for pred_dict, expec in zip(predictions, expected):
+    #     template = ('\nPrediction is "{}" ({:.1f}%), expected "{}"')
+    #
+    #     class_id = pred_dict['class_ids'][0]
+    #     probability = pred_dict['probabilities'][class_id]
+    #
+    #     print(template.format(iris_data.SPECIES[class_id],
+    #                           100 * probability, expec))
 
 
 if __name__ == '__main__':
-  tf.logging.set_verbosity(tf.logging.INFO)
-  define_movie_flags()
-  absl_app.run(main)
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.app.run()
