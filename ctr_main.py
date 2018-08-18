@@ -81,7 +81,7 @@ def main(_):
         print('perform {}s epoch...'.format(i))
         # Train the Model.
         classifier.train(
-            input_fn=get_input_fn(os.path.join('prev-output', 'train_format.tfrecord'), 256, 1, 1000, use_tfrecord=True))
+            input_fn=get_input_fn(os.path.join('prev-output', 'train_format.csv'), 256, 1, 1000))
 
         # Evaluate the model.
         eval_result = classifier.evaluate(
