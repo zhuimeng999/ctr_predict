@@ -32,8 +32,8 @@ def my_model(features, labels, mode, params):
     net = tf.feature_column.input_layer(features, params['feature_columns'])
     input_dim = net.shape.as_list()
     tf.logging.info('input dim {}'.format(input_dim))
-    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.tanh)
-    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.tanh)
+    net = tf.layers.dense(net, units=input_dim[1]*2, activation=tf.nn.tanh)
+    net = tf.layers.dense(net, units=input_dim[1]*2, activation=tf.nn.tanh)
 
     # Compute logits (1 per class).
     logits = tf.layers.dense(net, units=1, activation=None)
@@ -70,12 +70,17 @@ def my_model(features, labels, mode, params):
 
 def main(_):
     # Build 2 hidden layer DNN with 10, 10 units respectively.
+    ws = tf.estimator.WarmStartSettings(
+        ckpt_to_initialize_from="/home/lucius/Projects/notebook/homework/ctr_predict/models/v1",
+        vars_to_warm_start=".*input_layer.*")
+
     classifier = tf.estimator.Estimator(
         model_fn=my_model,
         params={
             'feature_columns': build_model_columns()
         },
-        model_dir=FLAGS.output_dir)
+        model_dir=FLAGS.output_dir,
+        warm_start_from=ws)
 
     for i in range(FLAGS.epochs_to_train):
         print('perform {}s epoch...'.format(i))
