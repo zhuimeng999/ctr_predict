@@ -32,8 +32,9 @@ def my_model(features, labels, mode, params):
     net = tf.feature_column.input_layer(features, params['feature_columns'])
     input_dim = net.shape.as_list()
     tf.logging.info('input dim {}'.format(input_dim))
-    net = tf.layers.dense(net, units=input_dim[1]*2, activation=tf.nn.tanh)
-    net = tf.layers.dense(net, units=input_dim[1]*2, activation=tf.nn.tanh)
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.crelu)
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.selu)
+    net = tf.layers.dense(net, units=input_dim[1], activation=tf.nn.selu)
 
     # Compute logits (1 per class).
     logits = tf.layers.dense(net, units=1, activation=None)
@@ -63,16 +64,19 @@ def my_model(features, labels, mode, params):
     # Create training op.
     assert mode == tf.estimator.ModeKeys.TRAIN
 
-    optimizer = tf.train.AdagradOptimizer(learning_rate=0.001)
+    optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001)
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
 def main(_):
     # Build 2 hidden layer DNN with 10, 10 units respectively.
-    ws = tf.estimator.WarmStartSettings(
-        ckpt_to_initialize_from="/home/lucius/Projects/notebook/homework/ctr_predict/models/v1",
-        vars_to_warm_start=".*input_layer.*")
+    if False:
+        ws = tf.estimator.WarmStartSettings(
+            ckpt_to_initialize_from="/home/lucius/Projects/notebook/homework/ctr_predict/models/v1",
+            vars_to_warm_start=".*input_layer.*")
+    else:
+        ws = None
 
     classifier = tf.estimator.Estimator(
         model_fn=my_model,
