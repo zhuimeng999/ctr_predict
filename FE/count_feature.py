@@ -51,7 +51,7 @@ with open(test_filename, 'r') as f:
     for line_no, line in enumerate(f):
         features = line.strip().split(',')
         for index, feature in enumerate(features[1:]):
-                valid_count_list[index][feature] += 1
+                test_count_list[index][feature] += 1
         if (line_no % progress_step) == 0:
             logger.info('test progress %d', line_no)
     logger.info('test progress %d, done!!!', line_no)
