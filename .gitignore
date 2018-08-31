@@ -106,5 +106,5 @@ venv.bak/
 /.idea/
 /output/
 /prev-output
-/models/
 *.pickle
+/FE/info/
