@@ -5,7 +5,7 @@ from datetime import datetime
 from sklearn.externals import joblib
 
 dpath = 'prev-output'
-data_path = os.path.join(dpath, 'train.csv')
+data_path = os.path.join(dpath, 'train_split.csv')
 ds = pd.read_csv(data_path, nrows=500000)
 ds.drop('id', inplace=True, axis=1)
 
