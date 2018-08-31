@@ -26,7 +26,7 @@ for column in columns:
 del feature_map
 
 print('build gbdt model ...')
-gbdt = GradientBoostingClassifier(loss='deviance',n_estimators=1000, learning_rate=0.1, max_depth=4, subsample=0.8,
+gbdt = GradientBoostingClassifier(loss='deviance',n_estimators=2000, learning_rate=0.3, max_depth=10, subsample=0.8,
                                   min_samples_split=2000, min_samples_leaf=1000, random_state=0, verbose=1)
 
 label = ds['click']
