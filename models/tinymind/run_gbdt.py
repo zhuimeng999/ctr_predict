@@ -50,12 +50,12 @@ ds_train = ds_train.drop(['click'], axis=1).values
 ds_valid = ds_valid.drop(['click'], axis=1).values
 
 print('build gbdt model ...')
-gbdt = GradientBoostingClassifier(loss='deviance',n_estimators=1000, learning_rate=0.3, max_depth=10, subsample=0.8,
+gbdt = GradientBoostingClassifier(loss='deviance',n_estimators=1000, learning_rate=0.1, max_depth=10, subsample=0.8,
                                   min_samples_split=2000, min_samples_leaf=1000, random_state=0, verbose=1, warm_start=True)
 
 
-for i in range(20):
-    gbdt.set_params(n_estimators=i*1000)
+for i in range(200):
+    gbdt.set_params(n_estimators=(i+1)*100)
     print('fit model ...', i)
     gbdt.fit(ds_train, label_train)
 
