@@ -44,8 +44,8 @@ with open('/output/feature_map.pickle', 'wb') as f:
     pickle.dump(feature_map, f, pickle.HIGHEST_PROTOCOL)
 del feature_map
 
-label_train = ds_train['click'].values()
-label_valid = ds_valid['click'].values()
+label_train = ds_train['click']
+label_valid = ds_valid['click']
 ds_train = ds_train.drop(['click'], axis=1).values
 ds_valid = ds_valid.drop(['click'], axis=1).values
 
