@@ -35,7 +35,7 @@ for column in columns:
     total_index = len(set(feature_map.values()))
     for feature in ds_valid[column]:
         if feature not in feature_map:
-            feature_encoded = (column + '_' + feature).encode()
+            feature_encoded = (column + '_' + str(feature)).encode()
             index = int(hashlib.md5(feature_encoded).hexdigest(), 16) % total_index
             feature_map[feature] = index
     ds_valid[column] = ds_valid[column].map(feature_map)
